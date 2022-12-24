@@ -6,6 +6,7 @@ Required environment
 - [PBC-0.5.14](https://crypto.stanford.edu/pbc/download.html)
 ## Installation ##
 ``` shell
+git clone git@github.com:tttttracy/om-ORE.git
 cd om-ORE
 make
 ```
