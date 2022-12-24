@@ -1,0 +1,104 @@
+#include "ore.h"
+#include "errors.h"
+
+#include <stdio.h>
+#include <time.h>
+
+//./tests/time_ore < ../library/pbc-0.5.14/param/d159.param
+
+static int _err;
+#define ERR_CHECK(x)            \
+  if ((_err = x) != ERROR_NONE) \
+  {                             \
+    return _err;                \
+  }
+
+int main(int argc, char **argv) {
+  const uint32_t NBITS[] = {8, 16, 24, 32, 48, 64};
+
+  const int N_ENC_TRIALS = 100;
+  const int N_TGEN_TRIALS = 100;
+  const int N_CMP_TRIALS = 100;
+
+  uint32_t nbits_len = sizeof(NBITS) / sizeof(int);
+
+  printf("n = bit length of plaintext space\n\n");
+  printf("%2s %12s %15s %15s %12s %16s %16s %18s %18s %16s\n",
+         "n", "enc iter", "enc avg (ms)", "enc total (s)", "cmp iter", "cmp avg (ms)",\
+          "cmp total (s)", "ctxt_len (bytes)", "token_len (bytes)", "token_gen (ms)");
+
+  pairing_t pairing;
+  element_t g1, g2;
+  ERR_CHECK(init_pairing(pairing, g1, g2));
+  element_t k1, k21, k22;
+  element_init_Zr(k1, pairing);
+  element_init_Zr(k21, pairing);
+  element_init_Zr(k22, pairing);
+  element_random(k1);
+  element_random(k21);
+  element_random(k22);
+  uint64_t byte_len_of_ctxt = 0;
+  uint64_t byte_len_of_token = 0;
+
+  mpz_t q;
+  mpz_init_set_str(q, "625852803282871856053922297323874661378036491717", 10);
+  mpz_t r;
+  mpz_init_set_str(r, "208617601094290618684641029477488665211553761021", 10);
+
+  for (int i = 0; i < nbits_len; i++) {
+    ore_params params;
+    ERR_CHECK(init_ore_params(params, NBITS[i]));
+
+    ore_ciphertext ctxt;
+    element_t xi, xj;//secret value
+    mpz_t xjm_inv, xjm;//xj^(-1)
+    mpz_t kFi_m;//key for prf F
+    ERR_CHECK(init_ore_ciphertext(ctxt, params, pairing, g1, g2, xi, xj, k21, xjm_inv, xjm, kFi_m));
+
+    clock_t start_time = clock();
+    int enc_trials = N_ENC_TRIALS / (i + 1);
+    for (int j = 0; j < enc_trials; j++) {
+      ERR_CHECK(ore_encryption(ctxt, rand(), pairing, k1, kFi_m, q, r));
+    }
+    byte_len_of_ctxt = sizeof(bool) + sizeof(ore_params) + sizeof(element_t)*(NBITS[i] + 1);
+    double enc_time_elapsed = (double)(clock() - start_time) / CLOCKS_PER_SEC;
+    double enc_time = enc_time_elapsed / enc_trials * 1000;
+
+    int res;
+
+    ore_token token;
+    mpz_t mim[NBITS[i]], mim_inv[NBITS[i]];
+    ore_exp_tmp exp_tmp;
+    ERR_CHECK(init_ore_token(token, params, pairing, g2, k22, xj, mim, mim_inv, exp_tmp));
+    int token_gen_trials = N_TGEN_TRIALS / (i + 1);
+    start_time = clock();
+    for (int j = 0; j < token_gen_trials; j++) {
+      ERR_CHECK(ore_token_gen(token, rand(), pairing, k1, xj, xi, g1, g2, q, r, xjm_inv, mim, mim_inv, exp_tmp));
+    }
+    double token_gen_time_elapsed = (double)(clock() - start_time) / CLOCKS_PER_SEC;
+    double token_gen_time = token_gen_time_elapsed / token_gen_trials * 1000;
+    byte_len_of_token = sizeof(bool) + sizeof(ore_params) + \
+    sizeof(element_t) + sizeof(ore_token_bit)*(NBITS[i] + 1);
+    
+
+    start_time = clock();
+    for (int j = 0; j < N_CMP_TRIALS; j++) {
+      ore_compare(&res, ctxt, token, pairing);
+    }
+    double cmp_time_elapsed = (double)(clock() - start_time) / CLOCKS_PER_SEC;
+    double cmp_time = cmp_time_elapsed / N_CMP_TRIALS * 1000;
+
+    printf("%2d %12d %15.2f %15.2f %12d %16.2f %16.2f %18lu %18lu %16.2f\n",
+           NBITS[i], enc_trials, enc_time, enc_time_elapsed, N_CMP_TRIALS, cmp_time,
+           cmp_time_elapsed, byte_len_of_ctxt, byte_len_of_token, token_gen_time);
+
+    ERR_CHECK(clear_ore_ciphertext(ctxt));
+    ERR_CHECK(clear_ore_token(token));
+  }
+
+  element_clear(k1);
+  element_clear(k21);
+  element_clear(k22);
+  ERR_CHECK(clear_pairing(pairing, g1, g2));
+  return 0;
+}
