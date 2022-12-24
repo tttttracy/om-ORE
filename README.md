@@ -1,4 +1,6 @@
 # om-ORE
+The om-ORE code is improved on the basis of the [m-ORE](https://github.com/collisionl/m-ORE) code, mainly modifying the token generation process.
+
 ## Prerequisites ##
 Required environment
 - [OpenSSL-1.1.1](https://www.openssl.org/source/)
